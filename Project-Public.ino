@@ -1,0 +1,545 @@
+
+/*
+การต่อวงจร
+Fingerprint ----> ESP8266
+V+  ---->  Vin
+Tx ---->  D6
+Rx  ---->  D7
+Gnd   ---->  Gnd
+
+LED1 ติตเมื่อลายนิ้วมือตรงกัน ----> ESP8266
+Anode(+)   ----> D4
+Cathode(-) ----> Gnd
+
+LED2 ติตเมื่อลายนิ้วมือไม่ตรงกัน ----> ESP8266
+Anode(+)   ----> D3
+Cathode(-) ----> Gnd
+
+Relay ----> ESP8266
+Vcc  ---->  Vin
+IN1  ---->  D0
+Gnd ---->  Gnd
+
+LCD ----> ESP8266
+gnd -> GND
+Vcc -> 3V
+SDA -> ขาD2
+SCL -> ขาD1
+
+
+Buzzer ----> ESP8266
+gnd -> GND
+Vcc -> 5V
+S -> ขาD5
+
+ID 50UP = Admin
+*/
+#include <Adafruit_Fingerprint.h> //library สแกนนิ้ว
+#include <TridentTD_LineNotify.h> //library Line Notify
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27, 16, 2); // เพิ่มตรงนี้
+#define SSID        "TC-Entertainment"
+#define PASSWORD    "wifiteach"
+#define LINE_TOKEN  "0OLs88J8wcTEhX8Go5CQQx7udRcYYU6nGLFiZeUZcrt"
+
+
+#ifdef ESP32
+#define mySerial Serial2   //esp32
+#define RELAY 15
+#define LED_GREEN 2
+#define LED_RED 4
+const int buzzer = D5; //buzzer to arduino pin 13
+#elif defined(ESP8266)
+SoftwareSerial mySerial(D6, D7);  //esp8266
+#define RELAY D0
+#define LED_GREEN D4
+#define LED_RED D3
+const int buzzer = D5; //buzzer to arduino pin 13
+
+#elif defined(__AVR__)
+SoftwareSerial mySerial(2, 3);   //arduino uno ,nano ,promini
+#define RELAY 13
+#define LED_GREEN 12
+#define LED_RED 11
+const int buzzer = D5; //buzzer to arduino pin 13
+
+#endif
+
+byte delayled = 100;
+Adafruit_Fingerprint finger = Adafruit_Fingerprint(&mySerial);
+String inputString = "";
+String number = "";
+uint8_t id;
+boolean stringin = 0;
+
+String password = "NZNZ";  //4ตัวอักษร
+
+
+void unlock()
+{
+    
+    digitalWrite(RELAY, 0);
+    digitalWrite(LED_GREEN, HIGH);
+    LINE.notify("ปลดล็อกประตูแล้วจะล็อกในอีก 5 วินาที");
+    lcd.clear(); // เคลียร์หน้าจอ LCD
+    lcd.print(".-------5-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 5");
+    delay(1000);
+    lcd.print(".-------4-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 4");
+    delay(1000);
+    lcd.print(".-------3-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 3");
+    delay(1000);
+    lcd.print(".-------2-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 2");
+    delay(1000);
+    lcd.print(".-------1-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 1");
+    delay(1000);
+    lcd.print(".-----READY-----"); //พิมพ์ข้อความ "LCD1602 I2c Test"
+    lcd.setCursor(2, 1); // กำหนดให้ เคอร์เซอร์ อยู่ตัวอักษรกำแหน่งที3 แถวที่ 2 เตรียมพิมพ์ข้อความ
+    lcd.print(""); //พิมพ์ข้อความ "myarduino.net"
+    LINE.notify("ล็อกประตูแล้ว");
+    digitalWrite(RELAY, 1);
+    digitalWrite(LED_GREEN, LOW);
+    digitalWrite(RELAY, 1);
+    digitalWrite(LED_GREEN, HIGH);  
+}
+
+
+void setup()
+{
+  Serial.begin(9600);
+  Serial.println(LINE.getVersion());
+  WiFi.begin(SSID, PASSWORD);
+  Serial.printf("WiFi connecting to %s\n",  SSID);
+  while(WiFi.status() != WL_CONNECTED) { Serial.print("."); delay(400); }
+  Serial.printf("\nWiFi connected\nIP : ");
+  Serial.println(WiFi.localIP());  
+  LINE.setToken(LINE_TOKEN);  // กำหนด Line Token
+  
+
+  lcd.begin();
+  lcd.backlight();
+  lcd.setCursor(0, 0); // กำหนดให้ เคอร์เซอร์ อยู่ตัวอักษรตำแหน่งที่0 แถวที่ 1 เตรียมพิมพ์ข้อความ
+  lcd.print(".-----READY-----"); //พิมพ์ข้อความ "LCD1602 I2c Test"
+  lcd.setCursor(2, 1); // กำหนดให้ เคอร์เซอร์ อยู่ตัวอักษรกำแหน่งที3 แถวที่ 2 เตรียมพิมพ์ข้อความ
+  lcd.print(""); //พิมพ์ข้อความ "myarduino.net"
+    
+  Serial.println("\n\nAdafruit finger detect test");
+  
+
+  finger.begin(57600);
+  delay(5);
+  if (finger.verifyPassword()) {
+    Serial.println("พบเซ็นเซอร์ลายนิ้วมือ!");
+  } else {
+    Serial.println("ไม่พบเซ็นเซอร์ลายนิ้วมือ :(");
+    while (1) {
+      delay(1);
+    }
+  }
+  Serial.println(F("Reading sensor parameters"));
+  finger.getParameters();
+  Serial.print(F("Status: 0x")); Serial.println(finger.status_reg, HEX);
+  Serial.print(F("Sys ID: 0x")); Serial.println(finger.system_id, HEX);
+  Serial.print(F("Capacity: ")); Serial.println(finger.capacity);
+  Serial.print(F("Security level: ")); Serial.println(finger.security_level);
+  Serial.print(F("Device address: ")); Serial.println(finger.device_addr, HEX);
+  Serial.print(F("Packet len: ")); Serial.println(finger.packet_len);
+  Serial.print(F("Baud rate: ")); Serial.println(finger.baud_rate);
+
+  finger.getTemplateCount();
+
+  if (finger.templateCount == 0) {
+    Serial.print("Sensor doesn't contain any fingerprint data. Please run the 'enroll' example.");
+  }
+  else {
+    Serial.println("กำลังรอลายนิ้วมือที่ถูกต้อง...");
+    Serial.print("Sensor contains "); Serial.print(finger.templateCount); Serial.println(" templates");
+  }
+
+  pinMode(RELAY, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_RED, OUTPUT);
+  pinMode(buzzer, OUTPUT);
+  tone(buzzer,2000 );
+  digitalWrite(LED_GREEN, HIGH); 
+  delay(100);        
+  noTone(buzzer);
+  delay(100);     
+  tone(buzzer,2000 ); 
+  delay(100);
+  noTone(buzzer); 
+  digitalWrite(RELAY, 1);
+  digitalWrite(LED_RED, LOW);
+  digitalWrite(LED_GREEN, 1);
+}
+
+void loop()
+{
+  
+  if (stringin == 1) {
+    number = inputString.substring(5, 6);
+    id = number.toInt();
+    if (inputString.substring(0, 4) == password && id != 0) {
+      digitalWrite(LED_GREEN, HIGH);
+      digitalWrite(LED_RED, HIGH);
+      Serial.print("Enrolling ID #");
+      Serial.println(id);
+      while (!  getFingerprintEnroll() );
+      delay(3000);
+      digitalWrite(LED_GREEN, LOW);
+      digitalWrite(LED_RED, LOW);
+    }
+    inputString = "";
+    stringin = 0;
+  }
+  getFingerprintID();
+  delay(100);
+}
+
+uint8_t getFingerprintID() {
+  uint8_t p = finger.getImage();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image taken");
+      break;
+    case FINGERPRINT_NOFINGER:
+      Serial.println("ตรวจไม่พบนิ้ว");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_IMAGEFAIL:
+      Serial.println("Imaging error");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
+
+  // OK success!
+
+  p = finger.image2Tz();
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image converted");
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      Serial.println("Image too messy");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      Serial.println("Could not find fingerprint features");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      Serial.println("Could not find fingerprint features");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
+
+  // OK converted!
+  p = finger.fingerSearch();
+  if (p == FINGERPRINT_OK) {
+    Serial.println("พบการพิมพ์ตรงกัน!");
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    Serial.println("Communication error");
+    return p;
+  } else if (p == FINGERPRINT_NOTFOUND) {
+    Serial.println("ไม่พบลายนิ้วมือที่ตรงกันในข้อมูล!");
+    tone(buzzer,2000 );
+    digitalWrite(LED_GREEN, HIGH); 
+    delay(100);        
+    noTone(buzzer);
+    delay(100);     
+    tone(buzzer,2000 ); 
+    delay(100);
+    noTone(buzzer);
+    delay(100);
+    tone(buzzer,2000 );
+    delay(100);
+    noTone(buzzer);
+    digitalWrite(RELAY, 0);
+    digitalWrite(LED_GREEN, HIGH);
+    LINE.notify("ปลดล็อกประตูแล้วจะล็อกในอีก 5 วินาที");
+    lcd.clear(); // เคลียร์หน้าจอ LCD
+    lcd.print(".-------5-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 5");
+    delay(1000);
+    lcd.print(".-------4-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 4");
+    delay(1000);
+    lcd.print(".-------3-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 3");
+    delay(1000);
+    lcd.print(".-------2-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 2");
+    delay(1000);
+    lcd.print(".-------1-------"); 
+    lcd.setCursor(0, 0);
+    Serial.println("จะล็อกในอีก 1");
+    delay(1000);
+    lcd.print(".-----READY-----"); //พิมพ์ข้อความ "LCD1602 I2c Test"
+    lcd.setCursor(2, 1); // กำหนดให้ เคอร์เซอร์ อยู่ตัวอักษรกำแหน่งที3 แถวที่ 2 เตรียมพิมพ์ข้อความ
+    lcd.print(""); //พิมพ์ข้อความ "myarduino.net"
+    LINE.notify("ล็อกประตูแล้ว");
+    digitalWrite(RELAY, 1);
+    digitalWrite(LED_GREEN, LOW);
+    digitalWrite(RELAY, 1);
+    digitalWrite(LED_GREEN, HIGH);  
+    return p;
+  } else {
+    Serial.println("Unknown error");
+    return p;
+  }
+
+  // found a match!
+  Serial.print("พบลายนิ้วมือที่ตรงกัน ไอดี #"); Serial.print(finger.fingerID);
+  if (finger.fingerID == 9) {
+    NameID9();
+    Ready();
+    delay(1);
+  }
+  Serial.print(" ตรงกันคิดเป็น % "); Serial.println(finger.confidence);
+  if (p == FINGERPRINT_OK)
+  {
+    lcd.begin();
+    lcd.backlight();
+    unlock();
+  }
+  return finger.fingerID;
+}
+
+// returns -1 if failed, otherwise returns ID #
+int getFingerprintIDez() {
+  uint8_t p = finger.getImage();
+  if (p != FINGERPRINT_OK)  return -1;
+
+  p = finger.image2Tz();
+  if (p != FINGERPRINT_OK)  return -1;
+
+  p = finger.fingerFastSearch();
+  if (p != FINGERPRINT_OK)  return -1;
+
+  // found a match!
+  Serial.print("Found ID #"); Serial.print(finger.fingerID);
+  Serial.print(" with confidence of "); Serial.println(finger.confidence);
+  return finger.fingerID;
+}
+
+void serialEvent() {
+
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    if (inChar == '\n') {
+      String passin = "";
+      String idin = "";
+      String nameinstring = "";
+      int stepin = 0;
+      for (int j = 0; j < inputString.length(); j++) {
+        if (inputString[j] == ',') {
+          stepin++;
+        }
+        else if (stepin == 0) {
+          passin += inputString[j];
+        }
+        else if (stepin == 1) {
+          idin += inputString[j];
+        }
+      }
+      id = idin.toInt();
+      Serial.println(passin);
+      Serial.println(id);
+      Serial.println(nameinstring);
+      delay(5000);
+      if (passin == password && id > 0 ) {
+        stringin = 1;
+      }
+      else {
+        Serial.println(">>>เกิดข้อผิดพลาด");
+        delay(5000);
+      }
+    }
+    else {
+      inputString += inChar;
+    }
+  }
+}
+
+uint8_t readnumber(void) {
+  uint8_t num = 0;
+
+  while (num == 0) {
+    while (! Serial.available());
+    num = Serial.parseInt();
+  }
+  return num;
+}
+
+uint8_t getFingerprintEnroll() {
+
+  int p = -1;
+  Serial.print("กำลังรอนิ้วที่ถูกต้องเพื่อลงทะเบียน #"); Serial.println(id);
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    switch (p) {
+      case FINGERPRINT_OK:
+        Serial.println("Image taken");
+        break;
+      case FINGERPRINT_NOFINGER:
+        Serial.println(".");
+        break;
+      case FINGERPRINT_PACKETRECIEVEERR:
+        Serial.println("Communication error");
+        break;
+      case FINGERPRINT_IMAGEFAIL:
+        Serial.println("Imaging error");
+        break;
+      default:
+        Serial.println("Unknown error");
+        break;
+    }
+  }
+
+  // OK success!
+
+  p = finger.image2Tz(1);
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image converted");
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      Serial.println("Image too messy");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      Serial.println("ไม่พบคุณสมบัติที่เป็นลายนิ้วมือ");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      Serial.println("ไม่พบคุณสมบัติที่เป็นลายนิ้วมือ");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
+
+  Serial.println("เอานิ้วออกเลยเด้อ");
+  delay(1000);
+  p = 0;
+  while (p != FINGERPRINT_NOFINGER) {
+    p = finger.getImage();
+    delay(300);
+  }
+  Serial.print("ID "); Serial.println(id);
+  p = -1;
+  Serial.println("วางนิ้วเดิมลงไปไหม่..");
+
+  while (p != FINGERPRINT_OK) {
+    p = finger.getImage();
+    switch (p) {
+      case FINGERPRINT_OK:
+        Serial.println("Image taken");
+        break;
+      case FINGERPRINT_NOFINGER:
+        Serial.print(".");
+        break;
+      case FINGERPRINT_PACKETRECIEVEERR:
+        Serial.println("Communication error");
+        break;
+      case FINGERPRINT_IMAGEFAIL:
+        Serial.println("Imaging error");
+        break;
+      default:
+        Serial.println("Unknown error");
+        break;
+    }
+  }
+
+  // OK success!
+
+  p = finger.image2Tz(2);
+  switch (p) {
+    case FINGERPRINT_OK:
+      Serial.println("Image converted");
+      break;
+    case FINGERPRINT_IMAGEMESS:
+      Serial.println("Image too messy");
+      return p;
+    case FINGERPRINT_PACKETRECIEVEERR:
+      Serial.println("Communication error");
+      return p;
+    case FINGERPRINT_FEATUREFAIL:
+      Serial.println("ไม่พบคุณสมบัติที่เป็นลายนิ้วมือ");
+      return p;
+    case FINGERPRINT_INVALIDIMAGE:
+      Serial.println("ไม่พบคุณสมบัติที่เป็นลายนิ้วมือ");
+      return p;
+    default:
+      Serial.println("Unknown error");
+      return p;
+  }
+
+  // OK converted!
+  Serial.print("Creating model for #");  Serial.println(id);
+
+  p = finger.createModel();
+  if (p == FINGERPRINT_OK) {
+    Serial.println("Prints matched!");
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    Serial.println("Communication error");
+    return p;
+  } else if (p == FINGERPRINT_ENROLLMISMATCH) {
+    Serial.println("Fingerprints did not match");
+    return p;
+  } else {
+    Serial.println("Unknown error");
+    return p;
+  }
+
+  Serial.print("ID "); Serial.println(id);
+  p = finger.storeModel(id);
+  if (p == FINGERPRINT_OK) {
+    Serial.println("บันทึกลายนิ้วมือสำเร็จ!");
+    tone(buzzer,2000 );
+    digitalWrite(LED_GREEN, HIGH); 
+    delay(100);        
+    noTone(buzzer);
+    delay(100);     
+    tone(buzzer,2000 ); 
+    delay(100);
+    noTone(buzzer);
+  } else if (p == FINGERPRINT_PACKETRECIEVEERR) {
+    Serial.println("Communication error");
+    return p;
+  } else if (p == FINGERPRINT_BADLOCATION) {
+    Serial.println("Could not store in that location");
+    return p;
+  } else if (p == FINGERPRINT_FLASHERR) {
+    Serial.println("Error writing to flash");
+    return p;
+  } else {
+    Serial.println("Unknown error");
+    return p;
+  }
+
+  return true;
+}
